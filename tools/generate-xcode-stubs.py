@@ -364,9 +364,9 @@ typedef struct {
 }
 
 for bin in IMPORTANT_BINARIES:
-	if not bin in VAR_OVERRIDES:
+	if bin not in VAR_OVERRIDES:
 		VAR_OVERRIDES[bin] = {}
-	if not bin in FUNC_OVERRIDES:
+	if bin not in FUNC_OVERRIDES:
 		FUNC_OVERRIDES[bin] = []
 
 RPATH_REGEX  = r"\s*cmd LC_RPATH\n\s*cmdsize [0-9]+\n\s*path ([^(]+?)\s*\(offset"
@@ -427,17 +427,21 @@ def get_rpaths(binary: str, executable: str | None = None, extra_rpaths: List[st
 	final_rpaths: List[str] = []
 	for rpath in rpaths:
 		parts = pathlib.PurePosixPath(rpath).parts
-		if parts[0] == '@executable_path' or parts[0] == '@executable':
-			if executable == None:
+		if parts[0] in ['@executable_path', '@executable']:
+			if executable is None:
 				raise ResolutionError('Cannot use @executable_path when no executable is specified')
 			else:
 				final_rpaths.append(os.path.normpath(os.path.join(os.path.dirname(executable), *parts[1:])))
 		elif parts[0] == '@loader_path':
 			final_rpaths.append(os.path.normpath(os.path.join(os.path.dirname(binary), *parts[1:])))
 		elif parts[0].startswith('@'):
-			raise ResolutionError('Unrecognized special path root (' + parts[0] + ') in RPATH: ' + rpath)
+			raise ResolutionError(
+				f'Unrecognized special path root ({parts[0]}) in RPATH: {rpath}'
+			)
 		else:
-			if rpath.startswith(XCODE_PATH + '/') or rpath.startswith(SYSTEM_ROOT + '/'):
+			if rpath.startswith(f'{XCODE_PATH}/') or rpath.startswith(
+				f'{SYSTEM_ROOT}/'
+			):
 				final_rpaths.append(rpath)
 			else:
 				final_rpaths.append(os.path.normpath(os.path.join(SYSTEM_ROOT, os.path.relpath(rpath, '/'))))
@@ -484,8 +488,8 @@ def get_deps(binary: str, recursive: bool = False, executable: str | None = None
 
 	for dep in deps:
 		parts = pathlib.PurePosixPath(dep).parts
-		if parts[0] == '@executable_path' or parts[0] == '@executable':
-			if executable == None:
+		if parts[0] in ['@executable_path', '@executable']:
+			if executable is None:
 				raise ResolutionError('Cannot use @executable_path when no executable is specified')
 			else:
 				final_deps.append(os.path.normpath(os.path.join(os.path.dirname(executable), *parts[1:])))
@@ -499,9 +503,15 @@ def get_deps(binary: str, recursive: bool = False, executable: str | None = None
 					found = True
 					break
 			if not found:
-				raise ResolutionError('Could not find dependency in RPATH: ' + dep + '\nSearched: ' + str(rpaths))
+				raise ResolutionError(
+					f'Could not find dependency in RPATH: {dep}'
+					+ '\nSearched: '
+					+ str(rpaths)
+				)
 		elif parts[0].startswith('@'):
-			raise ResolutionError('Unrecognized special path root (' + parts[0] + ') in dependency: ' + dep)
+			raise ResolutionError(
+				f'Unrecognized special path root ({parts[0]}) in dependency: {dep}'
+			)
 		else:
 			if dep.startswith('/Applications/Xcode.app/'):
 				final_deps.append(os.path.join(XCODE_PATH, *parts[3:]))
@@ -515,46 +525,86 @@ def get_deps(binary: str, recursive: bool = False, executable: str | None = None
 		final_deps.remove(binary)
 
 	# get rid of some repetitive duplicated dependencies
-	final_deps = [x for x in final_deps if not os.path.basename(x) in EXCLUDED_BINARIES or x.startswith(SYSTEM_ROOT) or x.startswith('/usr')]
+	final_deps = [
+		x
+		for x in final_deps
+		if os.path.basename(x) not in EXCLUDED_BINARIES
+		or x.startswith(SYSTEM_ROOT)
+		or x.startswith('/usr')
+	]
 
 	DEPS[binary] = final_deps
 
-	if recursive:
-		recursive_deps = final_deps.copy()
-		for dep in final_deps:
-			if dep.startswith(XCODE_PATH + '/'):
-				# overwrite the RPATH cache for the dependency since we're loading it
-				get_rpaths(dep, executable, extra_rpaths = EXTRA_PLUGIN_RPATHS + rpaths, ignore_cache = True)
-				try:
-					recursive_deps += get_deps(dep, True, executable, processed)
-				except ResolutionError as e:
-					raise ResolutionError('Encountered error while processing dependency "' + dep + '" of "' + binary + '":\n' + e.message)
-		recursive_deps = sorted(set(recursive_deps))
-		return recursive_deps
-	else:
+	if not recursive:
 		return final_deps
+	recursive_deps = final_deps.copy()
+	for dep in final_deps:
+		if dep.startswith(f'{XCODE_PATH}/'):
+			# overwrite the RPATH cache for the dependency since we're loading it
+			get_rpaths(dep, executable, extra_rpaths = EXTRA_PLUGIN_RPATHS + rpaths, ignore_cache = True)
+			try:
+				recursive_deps += get_deps(dep, True, executable, processed)
+			except ResolutionError as e:
+				raise ResolutionError(
+					f'Encountered error while processing dependency "{dep}" of "{binary}'
+					+ '":\n'
+					+ e.message
+				)
+	recursive_deps = sorted(set(recursive_deps))
+	return recursive_deps
 
 def get_bind_symbols(binary: str, binary_map: Dict[str, str]) -> List[Symbol]:
-	get_bin_name = lambda name: binary_map[name] if name in binary_map else f'@{name}@'
+	get_bin_name = lambda name: binary_map.get(name, f'@{name}@')
 	output = subprocess.check_output([DYLDINFO, '-bind', binary]).decode()
 	var_matches = re.finditer(VAR_REGEX, output, re.MULTILINE)
-	vars = list(set(Symbol(get_bin_name(match.group(1)), match.group(2), SymbolType.VARIABLE) for match in var_matches))
+	vars = list(
+		{
+			Symbol(
+				get_bin_name(match.group(1)), match.group(2), SymbolType.VARIABLE
+			)
+			for match in var_matches
+		}
+	)
 	func_matches = re.finditer(FUNC_REGEX, output, re.MULTILINE)
-	funcs = list(set(Symbol(get_bin_name(match.group(1)), match.group(2), SymbolType.FUNCTION) for match in func_matches))
+	funcs = list(
+		{
+			Symbol(
+				get_bin_name(match.group(1)), match.group(2), SymbolType.FUNCTION
+			)
+			for match in func_matches
+		}
+	)
 	class_matches = re.finditer(CLASS_REGEX, output, re.MULTILINE)
-	classes = list(set(Symbol(get_bin_name(match.group(1)), match.group(2)[len('_OBJC_CLASS_$_'):], SymbolType.OBJC_CLASS) for match in class_matches if match.group(2).startswith('_OBJC_CLASS_$_')))
+	classes = list(
+		{
+			Symbol(
+				get_bin_name(match.group(1)),
+				match.group(2)[len('_OBJC_CLASS_$_') :],
+				SymbolType.OBJC_CLASS,
+			)
+			for match in class_matches
+			if match.group(2).startswith('_OBJC_CLASS_$_')
+		}
+	)
 
 	# most lazy symbols are functions, so let's assume that and override manually as necessary
 	output = subprocess.check_output([DYLDINFO, '-lazy_bind', binary]).decode()
 	matches = re.finditer(LAZY_REGEX, output, re.MULTILINE)
-	lazy = list(set(Symbol(get_bin_name(match.group(1)), match.group(2), SymbolType.FUNCTION) for match in matches))
+	lazy = list(
+		{
+			Symbol(
+				get_bin_name(match.group(1)), match.group(2), SymbolType.FUNCTION
+			)
+			for match in matches
+		}
+	)
 
 	symbols = vars + funcs + classes + lazy
 
 	for symbol in symbols:
 		if symbol.binary.startswith('@') and symbol.binary.endswith('@'):
 			continue
-		if not symbol.binary in NM_OVERRIDES:
+		if symbol.binary not in NM_OVERRIDES:
 			if os.path.exists(SYSTEM_ROOT + symbol.binary) or os.path.exists(symbol.binary):
 				output = subprocess.check_output([NM, '-Ug', '-arch', 'x86_64', (SYSTEM_ROOT + symbol.binary) if os.path.exists(SYSTEM_ROOT + symbol.binary) else symbol.binary]).decode()
 				matches = re.finditer(NM_REGEX, output, re.MULTILINE)
@@ -598,9 +648,12 @@ def main():
 
 		all_bins = sorted(set(all_bins))
 
-		system_bins_tmp = [x for x in all_bins if not x.startswith(XCODE_PATH + '/')]
+		system_bins_tmp = [x for x in all_bins if not x.startswith(f'{XCODE_PATH}/')]
 		xc_bins = sorted(set(all_bins).difference(set(system_bins_tmp)))
-		system_bins = sorted(x[len(SYSTEM_ROOT):] if x.startswith(SYSTEM_ROOT + '/') else x for x in system_bins_tmp)
+		system_bins = sorted(
+			x[len(SYSTEM_ROOT) :] if x.startswith(f'{SYSTEM_ROOT}/') else x
+			for x in system_bins_tmp
+		)
 
 		for bin in system_bins:
 			print(bin)
@@ -614,7 +667,7 @@ def main():
 			all_symbols += get_bind_symbols(bin, binary_map)
 		for bin in system_bins:
 			short_bin_name = basename_no_ext(os.path.basename(bin))
-			if not short_bin_name in IMPORTANT_BINARIES:
+			if short_bin_name not in IMPORTANT_BINARIES:
 				if os.path.exists(SYSTEM_ROOT + bin):
 					all_symbols += get_bind_symbols(SYSTEM_ROOT + bin, binary_map)
 
@@ -627,11 +680,14 @@ def main():
 			if symbol.name in FUNC_OVERRIDES[bin_name] or symbol.name[1:] in FUNC_OVERRIDES[bin_name]:
 				symbol.type = SymbolType.FUNCTION
 
-		important_symbols_separated: Dict[str, List[Symbol]] = {}
-
-		for important_bin in IMPORTANT_BINARIES:
-			important_symbols_separated[important_bin] = [x for x in important_symbols if basename_no_ext(os.path.basename(x.binary)) == important_bin]
-
+		important_symbols_separated: Dict[str, List[Symbol]] = {
+			important_bin: [
+				x
+				for x in important_symbols
+				if basename_no_ext(os.path.basename(x.binary)) == important_bin
+			]
+			for important_bin in IMPORTANT_BINARIES
+		}
 		for important_bin, symbols in important_symbols_separated.items():
 			THIS_DIR = os.path.join(OUT_DIR, important_bin)
 			shutil.rmtree(THIS_DIR, ignore_errors=True)
@@ -657,7 +713,7 @@ def main():
 
 				if important_bin in ENSURE_METHODS:
 					for klass in ENSURE_METHODS[important_bin]:
-						if not klass in classes:
+						if klass not in classes:
 							classes_source.write((TEMPLATE_CATEGORY if klass.find('(') >= 0 else TEMPLATE_INTERFACE).format(klass).strip() + f'\n\n@implementation {klass}')
 							for method in ENSURE_METHODS[important_bin][klass]:
 								classes_source.write(generate_method(method))

@@ -20,7 +20,7 @@ import sys
 import subprocess
 
 def usage():
-    print("Usage: %s <Mach-O> <output directory>" % sys.argv[0])
+    print(f"Usage: {sys.argv[0]} <Mach-O> <output directory>")
 
 if len(sys.argv) != 3:
     usage()
@@ -41,8 +41,8 @@ for line in out.splitlines():
     if id == "T":
         functions.append(name)
 
-header = open(dest + "/functions.h", "w")
-source = open(dest + "/functions.c", "w")
+header = open(f"{dest}/functions.h", "w")
+source = open(f"{dest}/functions.c", "w")
 
 copyright ="""/*
 This file is part of Darling.
