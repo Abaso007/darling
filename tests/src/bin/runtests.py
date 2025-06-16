@@ -6,7 +6,7 @@ import time
 from xml.dom.minidom import Document
 
 TEST_ARCHITECTURES = [ "i386", "x86-64" ]
-TEST_PLATFORMS = tuple([ "10.2", "10.6", "10.8" ])
+TEST_PLATFORMS = "10.2", "10.6", "10.8"
 
 successful_tests = {}
 failed_tests = {}
@@ -37,8 +37,8 @@ def main():
 
 	for fileName in tests:
 		runTest(fileName[5:-7])
-	
-	src_dir = os.path.realpath(os.getcwd() + '/..')
+
+	src_dir = os.path.realpath(f'{os.getcwd()}/..')
 	os.chdir(orig_cwd)
 	writeTestResults("report.xml", src_dir)
 
