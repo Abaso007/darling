@@ -42,11 +42,11 @@ print("Downloading packages...")
 
 for package in packages[0]['packages']:
 	fname = os.path.basename(package['url'])
-	print("Downloading " + fname + "...")
+	print(f"Downloading {fname}...")
 
 	f = urllib2.urlopen(package['url'])
 
-	fullpath = tempdir + "/" + fname
+	fullpath = f"{tempdir}/{fname}"
 	with open(fullpath, "wb") as localfile:
 		for chunk in iter(lambda: f.read(16*1024), ''):
 			localfile.write(chunk)
@@ -55,7 +55,7 @@ for package in packages[0]['packages']:
 	exitCode = subprocess.call(["sudo", "installer", "-pkg", fullpath, "-target", "/"])
 
 	if exitCode != 0:
-		print("Installation failed with exit code " + str(exitCode))
+		print(f"Installation failed with exit code {str(exitCode)}")
 		exit(1)
 
 	os.remove(fullpath)
