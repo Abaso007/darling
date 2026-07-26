@@ -35,6 +35,6 @@ def editfile(f, old, new):
 for dirpath, dirname, filenames in os.walk("."):
     for filename in filenames:
         if filename.endswith("CMakeLists.txt"):
-            with open(dirpath +"/" + filename, "r+") as f:
+            with open(f"{dirpath}/{filename}", "r+") as f:
                 editfile(f, args.old, args.new)
-print("Edited " + str(lineCount) + " lines in " + str(fileCount) + " files.")
+print(f"Edited {str(lineCount)} lines in {str(fileCount)} files.")

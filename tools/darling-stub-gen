@@ -18,7 +18,7 @@ private_framework_prefix = "/System/Library/PrivateFrameworks/"
 ##### SET THIS TO WHERE YOUR class-dump BINARY IS #####
 #######################################################
 username = getpass.getuser()
-class_dump = "/Users/" + username + "/bin/class-dump"
+class_dump = f"/Users/{username}/bin/class-dump"
 
 copyright_template = """/*
  This file is part of Darling.
@@ -64,12 +64,12 @@ msg_handling = """- (NSMethodSignature *)methodSignatureForSelector:(SEL)aSelect
 
 # Utility functions
 def usage():
-    print("Usage: " + sys.argv[0] + " <Mach-O> <output directory>")
+    print(f"Usage: {sys.argv[0]} <Mach-O> <output directory>")
     exit(1)
 
 
 def extract_library_name(name):
-    name = re.search("/lib([A-Za-z0-9]+)\.dylib$", name).group(1)
+    name = re.search("/lib([A-Za-z0-9]+)\.dylib$", name)[1]
     print(name)
     return name
 
@@ -113,8 +113,8 @@ else:
     target_name = None
     exit(1)
 
-header_dir = output_dir + "/include/" + target_name + "/"
-source_dir = output_dir + "/src/"
+header_dir = f"{output_dir}/include/{target_name}/"
+source_dir = f"{output_dir}/src/"
 
 try:
     os.makedirs(header_dir)
@@ -170,7 +170,7 @@ static void initme(void) {
 }
 """ % (target_name, target_name))
 
-cmake = open(output_dir + "/CMakeLists.txt", "w")
+cmake = open(f"{output_dir}/CMakeLists.txt", "w")
 
 cmake.write("project(%s)\n\n" % target_name)
 
@@ -226,29 +226,27 @@ if uses_objc:
         protocol_contents, protocol_name = protocol_def.groups()
         if protocol_name in blacklisted_protocols:
             continue
-        proto_header = open(header_dir + protocol_name + ".h", "w")
-        proto_header.write(copyright)
-        proto_header.write("#include <Foundation/Foundation.h>\n\n")
-        # proto_header.write(protocol_contents)
-        proto_header.write("@protocol %s\n\n@end\n" % protocol_name)
-        proto_header.close()
+        with open(header_dir + protocol_name + ".h", "w") as proto_header:
+            proto_header.write(copyright)
+            proto_header.write("#include <Foundation/Foundation.h>\n\n")
+            # proto_header.write(protocol_contents)
+            proto_header.write("@protocol %s\n\n@end\n" % protocol_name)
         c_header.write("#import <%s/%s.h>\n" % (target_name, protocol_name))
 
     for class_def in classes_regex.finditer(class_dump_output):
         class_contents, class_name = class_def.groups()
         classes.append(class_name)
-        class_header = open(header_dir + class_name + ".h", "w")
-        class_header.write(copyright)
-        class_header.write("#include <Foundation/Foundation.h>\n\n")
-        # class_header.write(class_contents)
-        class_header.write("@interface %s : NSObject\n\n@end\n" % class_name)
-        class_header.close()
+        with open(header_dir + class_name + ".h", "w") as class_header:
+            class_header.write(copyright)
+            class_header.write("#include <Foundation/Foundation.h>\n\n")
+            # class_header.write(class_contents)
+            class_header.write("@interface %s : NSObject\n\n@end\n" % class_name)
         c_header.write("#import <%s/%s.h>\n" % (target_name, class_name))
 
         class_impl = open(source_dir + class_name + ".m", "w")
         class_impl.write(copyright)
         class_impl.write("#import <%s/%s.h>\n\n" % (target_name, class_name))
-        class_impl.write("@implementation " + class_name + "\n\n")
+        class_impl.write(f"@implementation {class_name}" + "\n\n")
         class_impl.write(msg_handling)
         class_impl.write("@end\n")
 
@@ -260,7 +258,7 @@ for funcname in functions:
 
 if library:
     cmake.write("add_darling_library(%s SHARED\n" % target_name)
-    cmake.write("    src/%s." % target_name + ("m" if uses_objc else "c") + "\n")
+    cmake.write(f"    src/{target_name}." + ("m" if uses_objc else "c") + "\n")
     if uses_objc:
         write_objc_source_file_locs(cmake, classes, 4)
     cmake.write(")\n")
@@ -287,7 +285,7 @@ else:
         cmake.write("    PRIVATE\n")
     cmake.write("    VERSION ${FRAMEWORK_VERSION}\n\n")
     cmake.write("    SOURCES\n")
-    cmake.write("        src/%s." % target_name + ("m" if uses_objc else "c") + "\n")
+    cmake.write(f"        src/{target_name}." + ("m" if uses_objc else "c") + "\n")
     if uses_objc:
         write_objc_source_file_locs(cmake, classes, 8)
 
